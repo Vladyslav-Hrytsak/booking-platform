@@ -1,0 +1,231 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+// Системные роли. USER — любой зарегистрированный пользователь (может быть
+// одновременно заказчиком и провайдером). ADMIN — системный администратор.
+// Нет значения PROVIDER, потому что "стать провайдером" = создать ProviderProfile,
+// а не сменить роль — это ключевое архитектурное решение из ТЗ.
+enum Role {
+  USER
+  ADMIN
+}
+
+// Статус модерации провайдера. Переходы строго однонаправленные:
+// PENDING → APPROVED или REJECTED
+// APPROVED → BANNED
+// Обратные переходы (REJECTED → APPROVED) запрещены без повторной подачи заявки —
+// это будет проверяться на уровне сервиса, не БД.
+enum ProviderStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BANNED
+}
+
+// Статус бронирования — жизненный цикл заявки.
+enum BookingStatus {
+  PENDING // создана, ждёт подтверждения провайдера
+  CONFIRMED // провайдер подтвердил
+  CANCELLED // отменена (любой стороной)
+  COMPLETED // услуга оказана — только после этого можно оставить Review
+}
+
+// Тип уведомления — нужен для фронтенда, чтобы отображать разные иконки/текст.
+enum NotificationType {
+  BOOKING_CREATED
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_COMPLETED
+  REVIEW_RECEIVED
+}
+
+// ─── МОДЕЛИ ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String
+  firstName    String
+  lastName     String?
+  avatarUrl    String?
+  role         Role    @default(USER)
+
+  // Опциональная связь 1:1 — пользователь становится провайдером только
+  // когда создаёт ProviderProfile. Без него он просто заказчик.
+  providerProfile ProviderProfile?
+
+  // Бронирования, где этот пользователь является ЗАКАЗЧИКОМ.
+  // Важно: это не все бронирования, связанные с пользователем —
+  // только те, где он платит за услугу.
+  bookings Booking[] @relation("CustomerBookings")
+
+  // Отзывы, которые НАПИСАЛ этот пользователь.
+  // Отдельный именованный relation, потому что в Review будет
+  // два поля, ссылающихся на User (reviewer), и Prisma
+  // потребует явного имени чтобы различить их.
+  reviews Review[] @relation("ReviewAuthor")
+
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProviderProfile {
+  id     String         @id @default(uuid())
+  userId String         @unique
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio    String?
+  phone  String?
+  city   String
+  status ProviderStatus @default(PENDING)
+
+  // Денормализованное среднее рейтинга — пересчитывается в сервисе
+  // каждый раз при создании нового Review. Хранится здесь чтобы
+  // не делать AVG-запрос при каждом показе карточки провайдера.
+  ratingAvg Float @default(0)
+
+  specializations ProviderSpecialization[]
+  listings        Listing[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Junction table для N:M между ProviderProfile и Subcategory.
+// Explicit (явная) модель вместо implicit many-to-many, потому что
+// в будущем сюда можно добавить поля (experienceYears, certificationUrl и т.д.)
+model ProviderSpecialization {
+  id                String @id @default(uuid())
+  providerProfileId String
+  subcategoryId     String
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  subcategory     Subcategory     @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  // Составной уникальный индекс — один провайдер не может дважды
+  // добавить одну и ту же специализацию.
+  @@unique([providerProfileId, subcategoryId])
+}
+
+model Category {
+  id            String        @id @default(uuid())
+  name          String        @unique
+  subcategories Subcategory[]
+
+  createdAt DateTime @default(now())
+}
+
+model Subcategory {
+  id         String   @id @default(uuid())
+  categoryId String
+  name       String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  specializations ProviderSpecialization[]
+  listings        Listing[]
+
+  createdAt DateTime @default(now())
+
+  // Уникальность названия в рамках одной категории.
+  // "Маникюр" может быть только один в категории "Красота".
+  @@unique([categoryId, name])
+}
+
+model Listing {
+  id                String  @id @default(uuid())
+  providerProfileId String
+  subcategoryId     String
+  title             String
+  description       String
+  price             Decimal
+  isActive          Boolean @default(true)
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  subcategory     Subcategory     @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+
+  images            ListingImage[]
+  availabilitySlots AvailabilitySlot[]
+  bookings          Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Отдельная модель для изображений листинга.
+model ListingImage {
+  id        String @id @default(uuid())
+  listingId String
+  url       String
+  order     Int    @default(0)
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model AvailabilitySlot {
+  id        String   @id @default(uuid())
+  listingId String
+  startAt   DateTime
+  endAt     DateTime
+  isBooked  Boolean  @default(false)
+
+  listing Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  booking Booking?
+
+  createdAt DateTime @default(now())
+}
+
+model Booking {
+  id         String        @id @default(uuid())
+  slotId     String        @unique // Гарантия 1:1 на уровне БД (защита от double-booking)
+  customerId String
+  listingId  String // Осознанная денормализация для сохранения истории аналитики листинга
+  status     BookingStatus @default(PENDING)
+  totalPrice Decimal // Изменено на Decimal. Фиксация стоимости на момент создания бронирования
+
+  slot     AvailabilitySlot @relation(fields: [slotId], references: [id], onDelete: Restrict)
+  customer User             @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade)
+  listing  Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  review Review?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Review {
+  id         String  @id @default(uuid())
+  bookingId  String  @unique // Строго один отзыв на одно бронирование
+  reviewerId String // Автор отзыва (User)
+  rating     Int
+  comment    String?
+
+  booking  Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reviewer User    @relation("ReviewAuthor", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id      String           @id @default(uuid())
+  userId  String
+  type    NotificationType
+  content String
+  isRead  Boolean          @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,10 @@
+booking-backend/node_modules/
+booking-frontend/node_modules/
+booking-backend/generated/
+booking-backend/.env
+booking-frontend/.env
+booking-frontend/.env.local
+booking-backend/dist/
+booking-frontend/dist/
+.idea/
+.DS_Store
