@@ -1,7 +1,10 @@
-import express from "express";
+import dotenv from 'dotenv';
+dotenv.config(); // загружает .env ДО всего остального
 
-const app = express();
-app.get("/", (_req, res) => res.send("OK"));
+import app from './app';
 
+const PORT = process.env.PORT || 3000;
 
-app.listen(3000, () => console.log("Server running on http://localhost:3000"));
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
