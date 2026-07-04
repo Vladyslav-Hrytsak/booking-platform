@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-dotenv.config(); // загружает .env ДО всего остального
+dotenv.config();
 
 import app from './app';
 
