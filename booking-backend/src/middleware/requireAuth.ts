@@ -21,6 +21,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     }
 }
 
+
 export function requireRole(role: 'ADMIN') {
     return (req: Request, res: Response, next: NextFunction): void => {
         if (req.user?.role !== role) {
