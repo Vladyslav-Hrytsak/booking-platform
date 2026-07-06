@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import authRouter from './routes/authRouter';
 import categoryRouter from './routes/categoryRouter';
+import providerRouter from "./routes/providerRouter";
 
 
 const app = express();
@@ -15,6 +16,7 @@ app.get('/health', (req, res) => {
 
 app.use('/auth', authRouter);
 app.use('/categories', categoryRouter);
+app.use('/provider-profiles', providerRouter);
 
 
 export default app;
