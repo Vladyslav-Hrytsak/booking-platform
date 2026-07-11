@@ -23,5 +23,6 @@ export interface AuthResponse {
         email: string;
         firstName: string;
         role: string;
+        plan: string;  
     };
 }

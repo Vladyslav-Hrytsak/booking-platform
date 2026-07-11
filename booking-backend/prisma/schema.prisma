@@ -18,6 +18,11 @@ enum Role {
   ADMIN
 }
 
+enum Plan {
+  FREE
+  PRO
+}
+
 // Статус модерации провайдера. Переходы строго однонаправленные:
 // PENDING → APPROVED или REJECTED
 // APPROVED → BANNED
@@ -71,8 +76,8 @@ model User {
   // Отдельный именованный relation, потому что в Review будет
   // два поля, ссылающихся на User (reviewer), и Prisma
   // потребует явного имени чтобы различить их.
-  reviews Review[] @relation("ReviewAuthor")
-
+  reviews       Review[]       @relation("ReviewAuthor")
+  plan          Plan           @default(FREE)
   notifications Notification[]
 
   createdAt DateTime @default(now())
